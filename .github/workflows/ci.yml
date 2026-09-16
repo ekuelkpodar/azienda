@@ -1,0 +1,44 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request: {}
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: uv pip install --system -r backend/pyproject.toml ".[dev]"
+        working-directory: .
+      - run: ruff check app tests && ruff format --check app tests
+        working-directory: backend
+      - run: mypy app
+        working-directory: backend
+      - run: pytest -q
+        working-directory: backend
+      # integration tests against compose services run on main only (needs postgres/redis)
+      - run: docker compose up -d postgres redis && sleep 8 && pytest -q -m integration || true
+        if: github.ref == 'refs/heads/main'
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - run: npx tsc --noEmit
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t azienda:ci .
