@@ -1,7 +1,7 @@
 """Billing tests: plans as data, subscriptions, credits, overage, caps, invoices."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -104,7 +104,7 @@ async def test_usage_metering_and_invoice(db_session, test_settings):
     await svc.seed_plans()
     await svc.subscribe(t, "growth")
 
-    today = date.today()
+    today = datetime.now(UTC).date()  # metering periods are UTC-bucketed; never date.today()
     await svc.record_usage(t, "seats", Decimal("3"), cost_usd=Decimal("36"))
     usage = await svc.get_usage(t, today.replace(day=1), today)
     dims = {u["dimension"]: u for u in usage}

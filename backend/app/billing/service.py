@@ -31,6 +31,15 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _billing_date() -> date:
+    """Canonical period bucket for usage metering: the UTC date.
+
+    All period-bucketed metering rows are keyed by this date, so callers
+    must query with UTC dates too (never ``date.today()``, which is the
+    server's local timezone and can disagree with UTC around midnight)."""
+    return _utcnow().date()
+
+
 def _dec(value: object) -> Decimal:
     return Decimal(str(value))
 
@@ -249,7 +258,7 @@ class BillingService(CreditLedger):
                            quantity: Decimal,
                            cost_usd: Decimal = Decimal("0"),
                            period: date | None = None) -> None:
-        period = period or _utcnow().date()
+        period = period or _billing_date()
         row = (await self.db.execute(
             select(UsageMeter).where(
                 UsageMeter.tenant_id == tenant.tenant_id,
