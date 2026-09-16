@@ -1,0 +1,55 @@
+# Azienda local dev: api (+worker) / postgres+pgvector / redis / minio.
+# DX bar: cp .env.example .env && docker compose up --build
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-azienda}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-azienda}
+      POSTGRES_DB: ${POSTGRES_DB:-azienda}
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-azienda}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+
+  api:
+    build: { context: ., dockerfile: Dockerfile, target: runtime }
+    env_file: [.env]
+    environment:
+      AZIENDA_DATABASE_URL: postgresql+asyncpg://$${POSTGRES_USER:-azienda}:$${POSTGRES_PASSWORD:-azienda}@postgres:5432/$${POSTGRES_DB:-azienda}
+      AZIENDA_REDIS_URL: redis://redis:6379/0
+    ports: ["8000:8000"]
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+
+  worker:
+    build: { context: ., dockerfile: Dockerfile, target: runtime }
+    env_file: [.env]
+    environment:
+      AZIENDA_DATABASE_URL: postgresql+asyncpg://$${POSTGRES_USER:-azienda}:$${POSTGRES_PASSWORD:-azienda}@postgres:5432/$${POSTGRES_DB:-azienda}
+      AZIENDA_REDIS_URL: redis://redis:6379/0
+    command: ["python", "-m", "app.cli", "worker", "run"]
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+
+volumes: { pgdata: {}, redisdata: {}, miniodata: {} }
